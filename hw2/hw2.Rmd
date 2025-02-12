@@ -1,0 +1,217 @@
+---
+title: "HW2"
+author: "Lily Monte"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+rm(list = ls())
+
+setwd("C:/Users/Lily/Documents/collegefiles/PLAN 372/plan372_hmks/hw2")
+
+library(tidyverse)
+
+inspection_df = read_csv("restaurant_inspections.csv")
+```
+
+The above code sets up the document, changes the working directory, loads tidyverse, and assignes the csv file to the object "inspection_df".
+
+## Question 1
+
+```{r}
+ggplot(inspection_df, aes(x = SCORE)) +
+  geom_histogram(color = "black", fill = "black", bins = 50) +
+  labs(
+    x = "Health Inspection Score",
+    y = "Count of Restaurants",
+    title = "Restaruant Inspection Scores in NC"
+  ) +
+  theme_bw()
+```
+This code creates a histogram, showing that the spread of health inspection scores is mostly localized between 80-100 points. The code inside `geom_histogram()` sets the visual appearance of the bars, and `bins = 50` means that each bar represents all values that fall between 2 inspection scores.  
+
+
+## Question 2
+
+To complete this question I conducted a linear regression to see if inspection scores varied by age of the restaurant, then plotted the relationship on a graph.  The use of the difftime function here allows for the subtraction of the two columns and producing the result in "weeks"
+
+```{r}
+inspection_df$date_2 = as.Date(inspection_df$DATE_, "%Y/%m/%d")
+inspection_df$opendate_2 = as.Date(inspection_df$RESTAURANTOPENDATE, "%Y/%m/%d")
+inspection_df$restaurant_age = as.numeric(difftime(inspection_df$date_2, inspection_df$opendate_2, unit = "weeks"))
+
+fit1 = lm(SCORE ~ restaurant_age, inspection_df)
+summary(fit1)
+
+ggplot(inspection_df, aes(x = restaurant_age, y = SCORE)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "red") + 
+  labs(y = "Score", x = "Restaurant Age (Weeks)", title = "Restaurant Health Inspection Score By Age") +
+  theme_bw()
+```
+The incredibly small slope of 0.00017 expected change in score between a brand new restaurant and a dining location one week older translates into about a `r 0.00017*52` point yearly increase.  In other words, there is little to no relationship between age of a location that serves food and the score it receives.  Of note is a single outlier which has a very low age and a score of 0, indicating the data probably needs further cleaning.
+
+## Question 3
+
+Because city is not a continuous variable, it will be difficult to perform a regression with it.  One possibility is to perform a multivariate regression with dummy variables, but it seems more useful to plot a graph and examine the results visually, as well as numerically.  First, though, I utilized base r commands to recode variables because mutate was causing issues that I could not solve.
+```{r}
+unique(inspection_df$CITY)
+inspection_df$CITY = toupper(inspection_df$CITY)
+unique(inspection_df$CITY)
+
+inspection_df$CITY[inspection_df$CITY == "RTP"] = "RESEARCH TRIANGLE PARK"
+inspection_df$CITY[inspection_df$CITY == "FUQUAY-VARINA"] = "FUQUAY VARINA"
+inspection_df$CITY[inspection_df$CITY == "HOLLY SPRING"] = "HOLLY SPRINGS"
+inspection_df$CITY[inspection_df$CITY == "MORRISVILE"] = "MORRISVILLE"
+inspection_df$CITY[inspection_df$CITY == "NORTH CAROLINA"] = NA
+  
+
+unique(inspection_df$CITY)
+
+inspection_df = inspection_df %>%
+  group_by(CITY) %>%
+  mutate(inspection_mean = mean(SCORE, na.rm = T)) %>%
+  ungroup
+
+ggplot(inspection_df, aes(x = reorder(CITY, inspection_mean), y = inspection_mean)) +
+  geom_point() + 
+  theme_bw() + 
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(angle = 90, vjust = .5)) +
+  labs(x = "City",
+       y = "Mean Inspection Score",
+       title = "Mean Inspection Score by City")
+
+```
+The graph demonstrates that the lowest average scores were in Angier and Zebulon, while Research Triangle Park and New hill had the highest average scores.
+
+## Question 4
+The following code first groups by the inspector variable and calculates the mean score for each of these groups, giving the mean score for each inspector.  The `tibble()` function places the data into a small table-like dataframe, which is then viewed.  The summary command allows for the viewing of key summary statistics about the data.
+```{r}
+inspector_averages = inspection_df %>%
+  group_by(INSPECTOR) %>%
+  summarize(mean_by_inspector = mean(SCORE, na.rm = T)) %>%
+  ungroup %>%
+  tibble()
+
+inspector_averages
+
+summary(inspector_averages)
+
+```
+
+The inspectors all seem to have relatively high average scores, with a minimum of 89, a max of 99, and a median of 97.02.  The harshest inspector was Thomas Jumalon, who averaged 89, and the most lenient was James Smith, who averaged 99
+
+## Question 5
+
+The following code creates 3 objects, then using the dplyr count function 
+```{r}
+facilitycount = inspection_df %>%
+  count(FACILITYTYPE)
+inspectorcount = inspection_df %>%
+  count(INSPECTOR)
+citycount = inspection_df %>%
+  count(CITY)
+citycount
+inspectorcount
+facilitycount
+```
+It seems as if the sample sizes within all 3 of these groupings are highly varied. For example, only 1 limited food service and 8 elderly nutrition sites are recorded in the dataset, which are sample sizes far to small to draw conclusions about.  Furthermore, New Hill, which had particularly high mean scores, only had 2 restaurants in the sample - this indicates that the high scores may not be an accurate aggregate, the same is true for Angier, which had particularly low mean scores - but tested only one For all of these cases, however, it would be important to understand how representative they are of the population; for example, does the distribution of food-service locations in the dataset mirror the distribution of food service in North Carolina at large?
+
+
+## Question 6
+
+The first bit of code in the following block adds a new column to inspection_df, using the `ifelse()` command to create a dummy that shows restaurants and changes all others to "other."  The next bit of code creates a new tibble called facilityscores that groups by restaurant & other, then takes the mean of both to find the average health inspector score for each category.
+```{r}
+inspection_df = inspection_df %>%
+  mutate(restaurant_dummy = ifelse(FACILITYTYPE == "Restaurant","Restaurant","Other"))
+
+facilityscores = inspection_df %>%
+  group_by(restaurant_dummy) %>%
+  summarize(mean(SCORE, na.rm = T))
+
+facilityscores
+
+```
+Restaurants seem to have a lower mean score than other food-service facilities, however only by about 1.5 points on average.  This indicates slightly higher scores for non-restaurants, but the smaller sample size for non-restaurants may indicate that it is not representative of the population of non-restaurant food service locations.
+
+
+## Question 7
+Essentially, the following codeblock copies the code of the previous question 1, but first filters by restaurant into a new dataframe, restaurant_df.
+```{r}
+restaurant_df = inspection_df %>%
+  filter(FACILITYTYPE == "Restaurant")
+
+#Question 1 analysis with only restaurants
+ggplot(restaurant_df, aes(x = SCORE)) +
+  geom_histogram(color = "black", fill = "black", bins = 50) +
+  labs(
+    x = "Health Inspection Score",
+    y = "Count of Restaurants",
+    title = "Restaruant Inspection Scores in NC"
+  ) +
+  theme_bw()
+```
+Part 2 of this question changes the outcome only slightly, removing an outlier of a particularly old location, but keeping the distribution mostly the same.  The slope of the regression line changed slightly, but both round to 0 at 3 significant figures, so the change is negligible.
+
+``` {r}
+#Question 2 analysis with only restaurants
+fitrestaurant = lm(SCORE ~ restaurant_age, restaurant_df)
+summary(fitrestaurant)
+
+ggplot(restaurant_df, aes(x = restaurant_age, y = SCORE)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "red") + 
+  labs(y = "Score", x = "Restaurant Age (Weeks)", title = "Restaurant Health Inspection Score By Age") +
+  theme_bw()
+```
+
+The code below does mostly the same as the code in question 3, albeit only using the restaurant_df dataframe.  The code groups by city and calculates the mean for each city, then plots it on a graph.
+```{r}
+#Question 3 analysis with only restaurants
+restaurant_df = restaurant_df %>%
+  group_by(CITY) %>%
+  mutate(inspection_mean = mean(SCORE, na.rm = T)) %>%
+  ungroup
+
+ggplot(restaurant_df, aes(x = reorder(CITY, inspection_mean), y = inspection_mean)) +
+  geom_point() + 
+  theme_bw() + 
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(angle = 90, vjust = .5)) +
+  labs(x = "City",
+       y = "Mean Inspection Score",
+       title = "Mean Inspection Score by City")
+```
+The code below performs the same code as question 4 but utilizing restaurant_df.  The mean's min and max do not change, indicating that utilizing only restaurants does not meaningfully impact average scores per inspector.  Of note, however, is the presence of one less row than in question 4, indicating that at least one inspector never inspected a restaurant.
+```{r}
+# Question 4 with restaurant only
+inspector_averages = restaurant_df %>%
+  group_by(INSPECTOR) %>%
+  summarize(mean_by_inspector = mean(SCORE, na.rm = T)) %>%
+  ungroup %>%
+  tibble()
+
+inspector_averages
+
+summary(inspector_averages)
+
+```
+This final code block once again reproduces question 5's code using the restaurant_df dataframe.  Naturally, only restaurants are examined so only these locations show up in the table.  Overall counts are of course reduced, but seemingly maintain a similar distribution among the two other categories.  Overall, the results for only restaurants do not seem particularly different from the total results.
+```{r}
+facilitycountrest = restaurant_df %>%
+  count(FACILITYTYPE)
+inspectorcountrest = restaurant_df %>%
+  count(INSPECTOR)
+citycountrest = restaurant_df %>%
+  count(CITY)
+citycountrest
+inspectorcountrest
+facilitycountrest
+```
+
