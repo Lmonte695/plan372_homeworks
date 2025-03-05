@@ -56,14 +56,14 @@ majorroads = highways %>%
          highway == "corridor")
 ```
 
-Depicted below is a representation of all supermarkets in the counties of Orange, Durham, and Wake counties, as well as census block groups.
+Depicted below is a representation of all supermarkets in the counties of Orange, Raleigh, and Wake counties, as well as census block groups.
 
 ```{r}
 testplot = ggplot() +
   geom_sf(data = majorroads, alpha = 1) +
   geom_sf(data = censusblocks, fill="green", alpha = 0.5)+
   geom_sf(data = supermarkets, fill="blue", color="blue",alpha=0.5)+
-  labs(title="Supermarkets in Orange, Durham, and Wake Counties") +
+  labs(title="Supermarkets in Orange, Raleigh, and Wake Counties") +
   annotation_scale(location = "bl", width_hint = 0.3) +
   theme_minimal() 
 
@@ -152,7 +152,7 @@ lowincome = ggplot() +
 lowincome
 ```
 
-Interestingly, the lowest-income areas in wake county seem concentrated in the urban areas surrounding the city of Durham.  These areas tend not to be in census blocks considered food deserts.  To further clarify where to place the new supermarket, it is necessary to look only at census block groups designated as food deserts.
+Interestingly, the lowest-income areas in wake county seem concentrated in the urban areas surrounding the city of Raleigh.  These areas tend not to be in census blocks considered food deserts.  To further clarify where to place the new supermarket, it is necessary to look only at census block groups designated as food deserts.
 
 ```{r}
 
@@ -168,6 +168,6 @@ lowincome2 = ggplot(data = join3) +
 lowincome2
 ```
 
-With this map, it becomes clear that there are food deserts in the urban parts of Durham, which are also the lowest-income areas.  Thus, these locations would benefit from a supermarket.  Therefore, I would place the new supermarket in the cluster of food desert census blocks with a poverty rate of around 40-50%, which would place it just south of the Durham city proper.  
+With this map, it becomes clear that there are food deserts in the urban parts of Raleigh, which are also the lowest-income areas.  Thus, these locations would benefit from a supermarket.  Therefore, I would place the new supermarket in the cluster of food desert census blocks with a poverty rate of around 40-50%, which would place it just south of the Raleigh city proper.  
 
-Ultimately, Wake county does not seem to be a county with a significant food accessibility problem outside of Urban Areas.  As an increasingly suburbanized and gentrified county due to the influence of the research triangle, it is perhaps not the most useful location to examine food deserts.  That said, several block groups near the central urban district of Durham have high poverty rates and low access to food, and those areas should be most strongly targeted with improvements to food access.
+Ultimately, Wake county does not seem to be a county with a significant food accessibility problem outside of Urban Areas.  As an increasingly suburbanized and gentrified county due to the influence of the research triangle, it is perhaps not the most useful location to examine food deserts.  That said, several block groups near the central urban district of Raleigh have high poverty rates and low access to food, and those areas should be most strongly targeted with improvements to food access.
