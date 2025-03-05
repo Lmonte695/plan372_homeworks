@@ -9,6 +9,9 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
+github repo: https://github.com/Lmonte695/plan372_homeworks
+You should be a collaborator on this.
+
 ```{r}
 rm(list = ls())
 

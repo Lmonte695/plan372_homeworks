@@ -1,0 +1,173 @@
+---
+title: "PLAN372 Homework 3"
+author: "Lily Monte"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+
+
+```{r, include = FALSE}
+#The following code chunk loads all the spatial and nonspatial files in, then
+#converts them to the same projection format.
+rm(list = ls())
+setwd("C:/Users/Lily/Documents/collegefiles/PLAN 372/plan372_hmks/hw3/hw3-data")
+library(tidyverse)
+library(sf)
+library(ggspatial)
+library(leaflet)
+
+census = read_csv("triangle_census.csv")
+blockgroups = st_read("orange_durham_wake_block_groups.shp")
+highways = st_read("triangle_highways_osm.shp")
+supermarkets = st_read("triangle_supermarkets_osm.shp")
+
+st_crs(blockgroups)
+st_crs(highways)
+st_crs(supermarkets)
+```
+
+```{r, include = FALSE}
+blockgroups = st_transform(blockgroups, 4326)
+
+blockgroups$GEOID = as.numeric(blockgroups$GEOID)
+
+censusblocks = left_join(blockgroups, census)
+
+wakeblocks = censusblocks %>% 
+  filter(COUNTYFP == 183)
+
+buffer = supermarkets %>% 
+  st_buffer(dist = 1609)
+
+unique(highways$highway)
+
+majorroads = highways %>% 
+  filter(highway == "primary"|
+         highway == "motorway"|
+         highway == "road"|
+         highway == "secondary"|
+         highway == "corridor")
+```
+
+Depicted below is a representation of all supermarkets in the counties of Orange, Durham, and Wake counties, as well as census block groups.
+
+```{r}
+testplot = ggplot() +
+  geom_sf(data = majorroads, alpha = 1) +
+  geom_sf(data = censusblocks, fill="green", alpha = 0.5)+
+  geom_sf(data = supermarkets, fill="blue", color="blue",alpha=0.5)+
+  labs(title="Supermarkets in Orange, Durham, and Wake Counties") +
+  annotation_scale(location = "bl", width_hint = 0.3) +
+  theme_minimal() 
+
+testplot
+```
+
+
+The distribution of supermakets in the triangle area is unequal.  As evidenced by the above map, supermarkets tend to be concentrated in certain areas, leaving some census block groups without a supermarket within one mile; these areas are termed "food deserts."  The below figure depicts areas in red which would be considered food deserts under this definition.
+
+```{r}
+Deserts1 = ggplot() +
+    geom_sf(data = majorroads) +
+    geom_sf(data = wakeblocks, alpha = 0.5, fill = "darkred", color = "black") +
+    geom_sf(data = buffer, alpha = 0.5, fill = "darkgreen", color = "darkgreen")
+
+Deserts1
+
+```
+
+
+```{r}
+join = wakeblocks %>% 
+  st_join(buffer,
+          join = st_intersects,
+          left = T)  %>% 
+  mutate(desert = ifelse(is.na(osmid),"Food Desert", "Access to Food")) %>% 
+  mutate(desert = as.factor(desert))
+  
+
+Deserts = ggplot() +
+  geom_sf(data = majorroads, alpha = 1) +
+  scale_fill_manual(values = c("darkgreen","darkred")) +
+  geom_sf(data = join, color = "black",  alpha = 0.5, aes(fill = desert))+
+  geom_sf(data = supermarkets, fill="blue", color="blue",alpha=0.5, size = 0.8)+
+  labs(title="Food Deserts in Wake County, with Supermarkets Shown") +
+  annotation_scale(location = "bl", width_hint = 0.3) +
+  theme_minimal() 
+
+Deserts
+```
+
+The above graph provides a visualization of census blocks which are located in food deserts compared to those which have some access to food.  Blocks which are partially within food deserts are included, and the graph is graduated; this shows that while households in some areas might have access to a supermarket within a mile, other households may not.  This is represented by a lighter shade of green on the graph, indicating areas that need attention, but are not in as critical condition as census blocks in red.  The areas that are partial food deserts might be less impactful to car-owning households, but could pose a problem if car ownership in these areas is low.  Darker areas indicate a greater number of supermarkets accessible by that block group, e.g, better access to food.
+
+```{r, include = F}
+join2 = wakeblocks %>% 
+  st_join(buffer,
+          join = st_intersects,
+          left = T)  %>% 
+  mutate(desert = ifelse(is.na(osmid),"Food Desert", "Access to Food")) %>% 
+  mutate(desert = as.factor(desert)) %>% 
+  distinct(GEOID, .keep_all = T) %>% 
+  mutate(desert_dummy = case_when(desert == "Food Desert" ~ 1,
+                                  desert == "Access to Food" ~ 0))
+
+sum(join2$total_population)#confirming that population matches the dataset
+
+sum(join2$total_population[join2$desert_dummy == 1])/sum(join2$total_population)
+
+```
+
+Based on the definition in this report of food deserts as Census Blocks where no portion of the block has a supermarket within one mile, 9.81% of Wake County residents are in a food desert.  Especially considering the generous definition of a food desert, it is troubling that one in ten households in wake county are located within a food desert.  Furthermore, as shown below, these food deserts disproportionately impact blocks with high populations of Black and Latina/o individuals.
+
+
+
+The total population of wake county is 1,069,079, and the proportion of the total population with a household income of less than  35,000 a year is `r sum(join2$households_income_less_than_35k)/sum(join2$total_households)`.  In comparison, the proportion of households in food deserts who meet this criteria is `r sum(join2$households_income_less_than_35k[join2$desert_dummy == 1])/sum(join2$total_households[join2$desert_dummy == 1])`.  These proportions are roughly the same, indicating that households in food deserts are not disproportionately impoverished compared to households outside of food deserts, only having a 3 percentage point increase in impoverished households.  The proportion of zero vehicle households in Wake County at large is `r sum(join2$zero_vehicle_households)/sum(join2$total_households)`, and the number of zero vehicle households in food deserts is `r sum(join2$zero_vehicle_households[join2$desert_dummy == 1])/sum(join2$total_households[join2$desert_dummy == 1])`.  For car ownership as well as income, the food deserts do not seem to differ strongly.  This might change, however, were the more strict definition of food desert utilized.
+
+In terms of racial demographics, `r sum(join2$race_black_african_american_alone)/sum(join2$total_households)` is the proportion of households that are solely Black or African American.  Comparatively, the proportion of Black households in food deserts is `r sum(join2$race_black_african_american_alone[join2$desert_dummy == 1])/sum(join2$total_households[join2$desert_dummy == 1])`.  The proportion of Hispanic households in the county is `r sum(join2$hispanic)/sum(join2$total_households)`, and the number of Hispanic households in food deserts is `r sum(join2$hispanic[join2$desert_dummy == 1])/sum(join2$total_households[join2$desert_dummy == 1])`.  Many marginalized groups, including Hispanic households, low-income households, and zero-vehicle households have slightly increased likelihood of living in a food desert, though it is marginal.  However, while access to food might be equal among demographics according to census blocks, marginalized groups could still be overrepresented in food deserts if food desert status was not grouped by census block.
+
+# New Supermarket Placement
+When considering where to place the new supermarket, the most significant variable to consider is the proportion of low-income households in an area.  Not only are they overrepresented within food deserts, they are also less likely to be able to afford the longer trips to access farther-away supermarkets.  To determine where to place the new supermarket, it is first important to map income status in wake county.
+
+```{r}
+join2$lowincomerate = (join2$households_income_less_than_35k/join2$total_households)*100
+
+join3 = join2 %>% 
+  filter(desert_dummy == 1)
+
+lowincome = ggplot() +
+  geom_sf(data = majorroads, alpha = 1) +
+  geom_sf(data = join2, color = "black",  alpha = 1, aes(fill = lowincomerate))+
+  labs(title="Census Block Groups by Proportion of Low-Income Households", subtitle= "Households Making Less than $35,000 a Year") +
+  scale_fill_viridis_c(option = "turbo") +
+  annotation_scale(location = "bl", width_hint = 0.3) +
+  theme_minimal() 
+
+lowincome
+```
+
+Interestingly, the lowest-income areas in wake county seem concentrated in the urban areas surrounding the city of Durham.  These areas tend not to be in census blocks considered food deserts.  To further clarify where to place the new supermarket, it is necessary to look only at census block groups designated as food deserts.
+
+```{r}
+
+lowincome2 = ggplot(data = join3) +
+  #geom_sf(data = majorroads, alpha = 1) +
+  geom_sf(color = "black",  alpha = 1, aes(fill = lowincomerate))+
+  labs(title="Food Desert Block Groups by Proportion of Low-Income Households", subtitle= "Households Making Less than $35,000 a Year") +
+  #geom_sf_label() +
+  scale_fill_viridis_c(option = "turbo") +
+  annotation_scale(location = "bl", width_hint = 0.3) +
+  theme_minimal() 
+
+lowincome2
+```
+
+With this map, it becomes clear that there are food deserts in the urban parts of Durham, which are also the lowest-income areas.  Thus, these locations would benefit from a supermarket.  Therefore, I would place the new supermarket in the cluster of food desert census blocks with a poverty rate of around 40-50%, which would place it just south of the Durham city proper.  
+
+Ultimately, Wake county does not seem to be a county with a significant food accessibility problem outside of Urban Areas.  As an increasingly suburbanized and gentrified county due to the influence of the research triangle, it is perhaps not the most useful location to examine food deserts.  That said, several block groups near the central urban district of Durham have high poverty rates and low access to food, and those areas should be most strongly targeted with improvements to food access.
