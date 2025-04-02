@@ -1,0 +1,118 @@
+---
+title: "HW 4 PLAN 372"
+author: "Lily Monte"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 1
+
+```{r}
+library(tidyverse)
+library(ggspatial)
+library(tidycensus)
+library(broom)
+
+setwd("C:/Users/Lily/Documents/collegefiles/PLAN 372/plan372_hmks/hw4")
+airports = read_csv("airport_pairs.csv")
+
+airports_cleaned = airports %>% 
+  filter(passengers > 10000) %>% 
+  filter(origin == "RDU" | dest == "RDU")
+
+knitr::kable(airports_cleaned[1:5, ], caption = "Table Of the First Five Rows of Airports with RDU Origin/Destination")
+
+```
+
+# Question 2
+```{r}
+
+#variables = load_variables(2023, "acs5")
+
+censusdata = get_acs(geography = "cbsa",
+                           variables = c(
+                             population = "B01003_001", 
+                             medianincome = "B19013_001"),
+                     year = 2022)
+
+censusdata = censusdata %>% 
+  select(GEOID, NAME, variable, estimate) %>% 
+  #group_by(GEOID, variable) %>% 
+  pivot_wider(names_from = variable,
+              values_from = estimate) %>% 
+  mutate(GEOID = as.numeric(GEOID))
+
+class(censusdata$GEOID)
+
+
+by = join_by(origin_cbsa == GEOID)
+combinedorigin = left_join(airports, censusdata, by)
+by = join_by(dest_cbsa == GEOID)
+combineddest = left_join(airports, censusdata, by)
+```
+
+```{r}
+originplot = ggplot(combinedorigin, aes(population, passengers)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Population of Origin CBSA by Passenger Totals", 
+       x = "Population",
+       y = "Passengers")
+originplot
+
+destinationplot = ggplot(combineddest, aes(population, passengers)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Population of Destination CBSA by Passenger Totals", 
+       x = "Population",
+       y = "Passengers")
+destinationplot
+
+distanceplot = ggplot(combinedorigin, aes(distancemiles, passengers)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Route Distance by Passenger Totals", 
+       x = "Flight Distance (Miles)",
+       y = "Passengers")
+distanceplot
+
+econplot = ggplot(combineddest, aes(medianincome, passengers)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Destination Median Income by Passenger Totals", 
+       x = "Population",
+       y = "Passengers")
+econplot
+```
+The scatterplots all provide interesting insights into flight patterns from various international airports.  Both origin and destination populations seem to have a linear relationship with the amount of passengers flying to and from each destinations, which is an intuitive conclusion to come to.  For metro areas with significantly larger populations, an interesting pattern emerges, however.  For these larger metro areas, the amount of incoming and outgoing passengers is highly varied, with some routes carrying tens of millions of passengers a year, and some transporting less than 15000.  Even from the largest city, New York, there were flight routes transporting as few as 20,000 passengers yearly.  Route distance has a negative correlation with passenger counts, which also makes intuitive sense; passengers are more likely to fly a shorter distance, for business and travel.  The most interesting outcome is the distribution of passenger counts against income; while I expected a linear relationship, it appears to have a quadratic relationship.  I expected that destination metro areas with higher median incomes would attract more travel, for both business and vacation.  However, travel seems highest in areas with incomes in the middle of the distribution (though still about double average income in the US.)  The reason the middle of the distribution is so high is likely because international airports are located in broadly higher income areas.
+
+# Question 3
+```{r}
+originregression = lm(passengers ~ population + distancemiles + medianincome, combinedorigin)
+summary(originregression)
+destinationregression = lm(passengers ~ population + distancemiles + medianincome, combineddest)
+
+originregressiontable = tidy(originregression)
+destinationregressiontable = tidy(destinationregression)
+
+
+```
+Running a regression on the population of the origin metro area reveals a small, but statistically significant linear relationship between population and yearly passengers.  The coefficient of 0.0048 indicates that for every additional 100 population a metro area has, its associated outgoing air traffic would increase by about 5 passengers.  This regression has a near-0 p-value, indicating an almost 0 chance of the obtained results being random.  population of destination area is almost identical, with a similar coefficient of 0.0048, indicating that an increase of 100 population is associated with an increase of about 5 yearly passengers.  This result is also statistically significant.  Travel distance negatively correlated with passenger counts; each additional mile of a trip is expected to result in about 19 fewer passengers yearly.  The p-value of this regression is also near 0, indicating a high validity to these results.  Finally, median income has a slight, but statistically significant, positive linear effect on number of passengers for both origin and destination.
+
+# Question 4 
+```{r}
+predictedvalues = data.frame(route = c("Portland", "El Paso", "Talahassee", "Sacramento"), distancemiles = c(2363,1606,496,2345), population = c(2505312,867161,386064,2394673), medianincome = c(90451,55344,59757,89227))
+
+
+predictedvalues$populationpredictionto = predict(originregression, predictedvalues)
+predictedvalues$populationpredictionfrom = predict(destinationregression, predictedvalues)
+
+
+predictedvalues
+```
+
+Based on the predictions for each destination, it seems as if Tallahassee would be the best option.  There is a greater than 5,000 predicted passenger increase comparing Tallahassee and the next highest option, Portland.  Based on this, distance seems to have the most significant impact on passenger throughput, as Tallahassee is by far the closest city to Raleigh.  However, this seems like it could possibly overstate the importance of distance, given that Tallahassee's values are significantly higher than cities with much larger populations, which should have a significant effect on demand.  However, as evidenced by the scatterplots, regardless of the population of destination and origin, most airports still seem to service all others.  So, while the importance of distance compared to other factors seems a little overstated, the analysis seems to relatively reliably indicate that Tallahassee is the best choice to make to create a new route.  This can be partially supported by the fact that all 3 p-values in the regression are well below 0.05, indicating that the results achieved are not likely to have occurred by chance.
