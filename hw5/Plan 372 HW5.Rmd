@@ -1,0 +1,330 @@
+---
+title: "Plan 372 HW5"
+author: "Lily Monte"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+rm(list = ls())
+setwd("C:/Users/Lily/Documents/collegefiles/PLAN 372/plan372_hmks/hw5")
+
+library(sf)
+library(tidyverse)
+library(ggspatial)
+library(tidygraph)
+library(igraph)
+library(nabor)
+
+#loading in all data
+connectedpoints = st_read("network_data/connected_points.gpkg")
+unconnectedpoints = st_read("network_data/unconnected_points.gpkg")
+edges = st_read("network_data/network.gpkg")
+map = st_read("NC_State_County_Boundary_NAD832011.shp")
+
+
+#selecting the counties that will be the subject of analysis, just to have a better looking background
+map = map %>% 
+  filter(County == "Randolph" | County ==  "Alamance" | County == "Chatham" | County == "Wake" | County ==  "Orange" | County == "Durham")
+
+#testing that the background works
+ggplot()+
+  geom_sf(,map, color = "black")
+```
+
+# Introduction
+
+The Triangle and surrounding Raleigh-Durham-Cary area includes several water systems, some of which purchase water from each other to meet the demands of their larger populations.  As depicted in the following map,  There are several connected water systems, mostly concentrated in Wake, Alamance, and Randolph county.  
+
+```{r, echo = FALSE}
+#creating a map by spatially plotting the points in the connectedpoints dataframe
+connectmap = ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf(,connectedpoints, color = "blue") +
+  geom_sf_text(data = map, aes(label = County)) +
+  #geom_sf_text(data = connectedpoints, aes(label = Name), label.size = 0.05) +
+  #geom_sf(,edges, color = "black") +
+  theme_bw() +
+  labs(title = "Connected Water Systems in The Triangle and Surrounding Areas")
+#calling map
+connectmap
+```
+Conversely, the vast majority of water systems in the region are unconnected, and many of them are small-scale, often servicing only a neighborhood or trailer park.  Some of them service entire small towns or cities, as well.  
+
+```{r, echo = FALSE}
+#creating a map by spatially plotting the points in the unconnectedpoints dataframe
+unconnectmap = ggplot()+
+  geom_sf(,map, color = "black") +
+  geom_sf(,unconnectedpoints, color = "red") +
+  #geom_sf_text(data = connectedpoints, aes(label = Name), label.size = 0.05) +
+  geom_sf_text(data = map, aes(label = County)) +
+  theme_bw() +
+  labs(title = "Unconnected Water Systems in The Triangle and Surrounding Areas")
+
+#calling map
+unconnectmap
+```
+
+
+```{r, include = FALSE}
+#Ditto, but for networks
+networkmap = ggplot()+
+  geom_sf(,map,color = "black") +
+  geom_sf(,edges, color = "blue") +
+  labs(title = "Water System Networks in The Triangle and Surrounding Areas")
+
+networkmap
+```
+Lastly, the following graph depicts all connected water systems (in blue), all unconnected systems (in red), and the connections between them.  There are a few water systems connecting to systems outside of the dataset, which are not represented by a point in this graph.
+
+```{r, echo = FALSE}
+#Creating a map with all 3, simply by layering different types of maps atop each other.
+totalmap = ggplot()+
+  geom_sf(,map, color = "black") +
+  geom_sf(,edges, color = "black") +
+  geom_sf(,unconnectedpoints, color = "red") +
+  geom_sf(,connectedpoints, color = "blue") +
+  geom_sf_text(data = map, aes(label = County)) +
+  #geom_sf_text(data = connectedpoints, aes(label = Name), label.size = 0.05) +
+  theme_bw() +
+  labs(title = "All Water Systems in The Triangle and Surrounding Areas")
+
+totalmap
+
+```
+
+Graph theory allows researchers to depict complex networks of interactions and infrastructure as vertices and edges connecting them.  The below graph is a network representation of connected water infrastructures in the Triangle and Raleigh-Durham-Cary areas.
+
+
+```{r, echo = FALSE}
+#gives each geometric line a unique id, for use in graphing
+edges <- edges %>%
+  mutate(edgeID = c(1:n()))
+
+#This gives each node a start and end column, but doesn't do anything with that yet 
+connectednodes <- edges %>%
+  st_coordinates() %>%
+  as_tibble() %>%
+  rename(edgeID = L1) %>%
+  group_by(edgeID) %>%
+  slice(c(1, n())) %>%
+  ungroup() %>%
+  mutate(start_end = rep(c('start', 'end'), times = n()/2))
+
+#This gives each node a unique index but puts it in both start and end so it is called correctly when the edges try to connect to it.
+connectednodes <- connectednodes %>%
+  mutate(xy = paste(.$X, .$Y)) %>% 
+  mutate(nodeID = group_indices(., factor(xy, levels = unique(xy)))) %>%
+  select(-xy)
+
+#This takes the startpoint of each edge and assigns it the node id for that node, and does the same for the endpoint.
+startnodes <- connectednodes %>%
+  filter(start_end == 'start') %>%
+  pull(nodeID)
+endnodes <- connectednodes %>%
+  filter(start_end == 'end') %>%
+  pull(nodeID)
+edges = edges %>%
+  mutate(from = startnodes, to = endnodes)
+
+connectednodes <- connectednodes %>%
+  distinct(nodeID, .keep_all = TRUE) %>%
+  select(-c(edgeID, start_end)) %>%
+  st_as_sf(coords = c('X', 'Y')) %>%
+  st_set_crs(st_crs(edges))
+
+
+graph = tbl_graph(nodes = connectednodes, edges = as_tibble(edges), directed = FALSE)
+#Creates a graph with the connected nodes
+ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf_text(data = map, aes(label = County)) +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf()) + 
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), color = "blue")
+
+graph
+
+```
+
+#Centrality Measures
+
+To understand how these water systems interact, centrality measures were conducted.   First, we calculated betweenness, indicating the number of paths which potentially pass through the system.
+```{r, echo = FALSE}
+graph <- graph %>%
+  activate(edges) %>%
+  mutate(length = st_length(geom))
+#graph
+
+graph <- graph %>%
+  activate(nodes) %>%
+  mutate(degree = centrality_degree()) %>%
+  mutate(betweenness = centrality_betweenness(weights = length)) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness(weights = length))
+  
+#graph
+
+#adds a betweenness centrality column to the dataframe, then graphs it
+ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), aes(col = betweenness, size = betweenness)) +
+  scale_colour_viridis_c(option = 'inferno') +
+  scale_size_continuous(range = c(0,4)) + 
+  labs(title = "Connected Water Systems in the Triangle and Surrounding Area",
+       subtitle = "Colored and Sized by Betweenness") +
+  geom_sf_text(data = map, aes(label = County), size = 3)
+```
+Contrary to what one might expect, the cities with the highest betweenness were Hillsborough and Mebane, two relatively small cities, especially considering the presence of much larger cities such as Durham and Raleigh which might have greater capacity due to infrastructure or greater need due to high populations.  As expected, areas situated nearer urban cores had higher betweenness compared to rural areas; it is likely that these rural areas simply purchase water from one system, whereas larger cities buy and sell water capacity to various other outlying areas.
+
+```{r, echo = FALSE}
+#ditto, but for degree centrality
+ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'grey50') + 
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), aes(col = degree, size = degree)) +
+  scale_colour_viridis_c(option = 'inferno') +
+  scale_size_continuous(range = c(0,4)) + 
+  labs(title = "Connected Water Systems in the Triangle and Surrounding Area",
+       subtitle = "Colored and Sized by Degree Centrality") +
+  geom_sf_text(data = map, aes(label = County), size = 3)
+
+
+```
+
+The above map demonstrates degree centrality, which simply measures how many connections each water system has.  As expected, Durham, one of the largest cities in the triangle and the state at large, has the highest degree centrality, with over 15 different connections.  The implications of this are fairly apparent, and indicate that much of the water infrastructure in the triangle area is dependent on the infrastructure of one city.  This puts the water infrastructure of the region in a precarious position; if the water infrastructure in Durham were to fail due to environmental catastrophe, for example, much of the rest of the triangle would be vulnerable to water issues.  This is not to say that trading water is a poor choice, but rather that concentrating all infrastructure in a few locations could prove a risk.
+
+```{r, echo = FALSE}
+#these two lines join connectednodes and connectedpoints so that each vertex has a city name column
+rename(connectedpoints, geometry = geom)
+
+connectednodes = st_join(connectednodes, connectedpoints)
+
+
+#this calculates the shortest distance between two nodes
+from_node <- graph %>%
+  activate(nodes) %>%
+  filter(nodeID == 31) %>%
+  pull(nodeID)
+to_node <- graph %>%
+  activate(nodes) %>%
+  filter(nodeID == 32) %>%
+  pull(nodeID)
+path <- shortest_paths(
+  graph = graph,
+  from = from_node,
+  to = to_node,
+  output = 'both',
+  weights = graph %>% activate(edges) %>% pull(length)
+)
+path$vpath
+
+path_graph_cary <- graph %>%
+    subgraph.edges(eids = path$epath %>% unlist()) %>%
+    as_tbl_graph()
+path_graph_cary
+
+path_graph_cary %>%
+  activate(edges) %>%
+  as_tibble() %>%
+  summarise(length = sum(length))
+
+
+ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'darkgrey') +
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), col = 'darkgrey', size = 0.5) +
+  geom_sf(data = path_graph_cary %>% activate(edges) %>% as_tibble() %>% st_as_sf(), lwd = 1, col = 'blue') +
+  geom_sf(data = path_graph_cary %>% activate(nodes) %>% filter(nodeID %in% c(from_node, to_node)) %>% as_tibble() %>% st_as_sf(), size = 2)
+```
+
+# Proposals for OWASA's Purchase of Water
+
+The above map details the route between the City of Cary water system and the OWASA system.  To purchase water from Cary, OWASA would need to route through existing infrastructure in Durham, which is a distance of 37055 meters, or about 23 miles. This would be significantly cheaper than purchasing from Raleigh, which is roughly 26 miles away when routed through Durham, as seen in the below tables and graphs.  In both cases, the water would only be routed through durham, and the difference in distance is small, but depending on the cost per mile, could be very significant in deciding from whom to purchase water.
+
+```{r, echo = FALSE}
+from_node <- graph %>%
+  activate(nodes) %>%
+  filter(nodeID == 31) %>%
+  pull(nodeID)
+to_node <- graph %>%
+  activate(nodes) %>%
+  filter(nodeID == 37) %>%
+  pull(nodeID)
+
+path <- shortest_paths(
+  graph = graph,
+  from = from_node,
+  to = to_node,
+  output = 'both',
+  weights = graph %>% activate(edges) %>% pull(length)
+)
+path$vpath
+
+path_graph_raleigh <- graph %>%
+    subgraph.edges(eids = path$epath %>% unlist()) %>%
+    as_tbl_graph()
+path_graph_raleigh
+
+path_graph_raleigh %>%
+  activate(edges) %>%
+  as_tibble() %>%
+  summarise(length = sum(length))
+
+ggplot() +
+  geom_sf(,map, color = "black") +
+  geom_sf(data = graph %>% activate(edges) %>% as_tibble() %>% st_as_sf(), col = 'darkgrey') +
+  geom_sf(data = graph %>% activate(nodes) %>% as_tibble() %>% st_as_sf(), col = 'darkgrey', size = 0.5) +
+  geom_sf(data = path_graph_raleigh %>% activate(edges) %>% as_tibble() %>% st_as_sf(), lwd = 1, col = 'blue') +
+  geom_sf(data = path_graph_raleigh %>% activate(nodes) %>% filter(nodeID %in% c(from_node, to_node)) %>% as_tibble() %>% st_as_sf(), size = 2) 
+
+```
+
+# Liberty, NC
+
+The town of Liberty is not connected to an existing water network.  However, were the municipal government of Liberty to purchase water, they would likely wish to do so from the closest node in the broader connected network.  The closest node in the network is the town of Ranseur, but this presents an issue; as a small town with less than 2,000 residents, it likely does not have the infrastructure available to supply water to the town of Liberty.  Therefore, I calculated the closest node with a degree centrality of 5, which is the city of Burlington.  This is likely a better choice as the city will more than likely have a ore capable infrastructure and an ability to sell excess water.  With this in mind, however, it still may be more viable to connect to the Ranseur network, as it would require fewer costs in terms of creating new infrastructure for water trading.
+
+```{r}
+#Theres probably a better way to do this but this takes the coordinates of liberty, nc, and assigns them to a point.
+liberty = st_point(c(-79.5682, 35.8557)) %>% 
+  st_sfc(crs = 4326)
+
+#This puts those coordinates into a matrix
+coords_origin <- liberty %>%
+  st_coordinates() %>%
+  matrix(ncol = 2)
+
+#The following two blocks of codes convert the nodes (which are in dataframe format) into spatial data coordinates
+nodes <- graph %>%
+  activate(nodes) %>%
+  as_tibble() %>%
+  st_as_sf()
+
+coords <- nodes %>%
+  st_coordinates()
+
+#The following three lines of code finds the closest coordinates in Coords to coords_origin, then indexes and prints it.
+node_index_o <- knn(data = coords, query = coords_origin, k = 1)
+node_o <- nodes[node_index_o$nn.idx, ]
+
+node_o$nodeID
+
+connectednodes$Name[connectednodes$nodeID == node_o$nodeID]
+
+#This filters for only nodes with high betweenness, then does the same thing.
+coords_filtered <- nodes %>%
+  filter(degree >= 5) %>% 
+  st_coordinates()
+
+node_index_o_filtered <- knn(data = coords_filtered, query = coords_origin, k = 1)
+node_o_filtered <- nodes[node_index_o_filtered$nn.idx, ]
+
+node_o_filtered$nodeID
+
+connectednodes$Name[connectednodes$nodeID == node_o_filtered$nodeID]
+```
+
