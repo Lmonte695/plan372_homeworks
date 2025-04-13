@@ -1,0 +1,129 @@
+---
+title: "Lily Monte HW6"
+author: "Lily Monte"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Code available at https://github.com/Lmonte695/plan372_homeworks
+
+```{r}
+#setting working directory and loading in data
+library(tidyverse)
+library(knitr)
+library(stargazer)
+
+rm(list = ls())
+
+setwd("C:/Users/Lily/Documents/collegefiles/PLAN 372/plan372_hmks/hw6")
+
+treedata = read_csv("TS3_Raw_tree_data.csv")
+```
+# Question 1
+
+```{r}
+treedata = treedata %>% 
+  mutate(statecode = str_match(treedata$City, "^([:alnum:]+[:punct:]) ([:alnum:]+)")[,3]) %>% 
+  mutate(city = str_match(treedata$City, "^([:alnum:]+)([:punct:]) ([:alnum:]+)")[,2])
+
+staterecords = treedata %>% 
+  group_by(statecode) %>% 
+  summarize(observations = n())
+
+kable(staterecords, col.names = c("State", "Number of Observations"))
+
+ggplot() +
+  geom_col(data = staterecords, aes(x = observations, y = statecode)) +
+  labs(title = "Number of Records per State",
+       y = "State",
+       x = "Observations")
+
+
+```
+
+# Question 2
+```{r}
+treedatacleaned = treedata %>% 
+  filter(statecode == "NC" | statecode == "SC")
+
+unique(treedatacleaned$city)
+```
+The two cities from which data were collected were Charleston, SC and Charlotte, NC
+
+# Question 3
+```{r}
+treedatacleaned = treedatacleaned %>% 
+  mutate(genus = str_match(ScientificName, "^([:alnum:]+) ([:alnum:]+)")[,2])
+
+canopy = treedatacleaned %>% 
+  group_by(genus) %>% 
+  summarize(avgdiam = mean(`AvgCdia (m)`))
+
+canopy$genus[canopy$avgdiam == max(canopy$avgdiam)]
+max(canopy$avgdiam)
+
+kable(canopy)
+
+
+```
+
+The genus with the largest crown diameter is the Quercus (oak), with an average crown diameter of 13.6 meters
+
+# Question 4
+```{r}
+treedata$ScientificName = str_replace_all(treedata$ScientificName, " x ", "")
+
+treedata = treedata %>% 
+  mutate(genus = str_match(ScientificName, "^([:alnum:]+) ([:alnum:]+)")[,2])
+
+treedata = treedata %>% 
+  mutate(species = str_match(ScientificName, "^([:alnum:]+) ([:alnum:]+)")[,3])
+
+genera = treedata %>% 
+  group_by(genus) %>% 
+  summarize(speciescount = n_distinct(species))
+
+kable(genera, col.names = c("Genus", "Number of Extant Species"))
+  
+
+```
+
+# Extra Credit
+```{r}
+
+generaage = treedata %>% 
+  group_by(genus) %>% 
+  summarize(avgage = mean(Age))
+
+summary(generaage$avgage)
+
+generaage$avgage[generaage$genus == "Quercus"]
+
+```
+Quercus, which has the largest average crown size, only has an average age slightly higher than the median.  The large crown diameter of the Quercus genus is therefore likely not due to their age.  It seems as if they simply have the largest crown diameter on average out of all tree Genera.
+
+```{r}
+
+genera2 = treedatacleaned %>% 
+  group_by(genus) %>% 
+  summarize(across(c("Age", "AvgCdia (m)"), ~mean(.x, na.rm = T)))
+
+kable(genera2)
+
+
+genera2$Age[genera2$genus == "Acer"]
+genera2$`AvgCdia (m)`[genera2$genus == "Acer"]
+
+genera3 = genera2 %>% 
+  filter(`AvgCdia (m)` >= 10)
+
+ggplot() +
+  geom_point(data = genera3, aes(x = `AvgCdia (m)`, y = Age))
+
+```
+
+In North Carolina and south Carolina specifically, the genus Quercus is generally observed at older ages than other trees, with an average of 35.5 years old at the time of observation, as seen in the above table.  So, they are likely not a tree with an especially large crown diameter compared to other genera.  To determine the best quickly-growing, large tree for NC and SC, data was first filtered to only include trees with a diameter of 10 or greater.  Plotting this, with the exception of one genus with a high age but comparatively low average crown diameter, the relationship between age and crown diameter is almost perfectly linear.  Thus, Acer, Betula, Platanus, and Quercus are all feasible genera for the reccomendation, as they all produce relatively comparative ratios of crown diameter to age.
